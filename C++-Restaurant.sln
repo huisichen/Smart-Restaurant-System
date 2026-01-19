@@ -1,31 +1,1612 @@
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.14.36705.20 d17.14
-MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "C++-Restaurant", "C++-Restaurant.vcxproj", "{32730311-F73F-4DAA-9604-8EAC0F19C70F}"
-EndProject
-Global
-	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|x64 = Debug|x64
-		Debug|x86 = Debug|x86
-		Release|x64 = Release|x64
-		Release|x86 = Release|x86
-	EndGlobalSection
-	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{32730311-F73F-4DAA-9604-8EAC0F19C70F}.Debug|x64.ActiveCfg = Debug|x64
-		{32730311-F73F-4DAA-9604-8EAC0F19C70F}.Debug|x64.Build.0 = Debug|x64
-		{32730311-F73F-4DAA-9604-8EAC0F19C70F}.Debug|x86.ActiveCfg = Debug|Win32
-		{32730311-F73F-4DAA-9604-8EAC0F19C70F}.Debug|x86.Build.0 = Debug|Win32
-		{32730311-F73F-4DAA-9604-8EAC0F19C70F}.Release|x64.ActiveCfg = Release|x64
-		{32730311-F73F-4DAA-9604-8EAC0F19C70F}.Release|x64.Build.0 = Release|x64
-		{32730311-F73F-4DAA-9604-8EAC0F19C70F}.Release|x86.ActiveCfg = Release|Win32
-		{32730311-F73F-4DAA-9604-8EAC0F19C70F}.Release|x86.Build.0 = Release|Win32
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
-	EndGlobalSection
-	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {51939750-7D4C-4C4D-8E60-8569263EB5EF}
-	EndGlobalSection
-EndGlobal
+#include<iostream>
+#include<fstream>
+#include<vector>
+#include<string>
+#include<iomanip>
+#include<map>
+#include<ctime>
+#include<sstream>
+#include<chrono>
+#include<random>
+#include<limits>
+using namespace std;
+const string MENU_FILE = "menu_data.txt";
+const string ORDER_FILE = "order_records.txt";
+const string CUSTOMER_FILE = "customer_data.txt";
+const string MEMBER_FILE = "member_data.txt";
+const string STAFF_FILE = "staff_data.txt";
+const string RESERVATION_FILE = "reservation_data.txt";
+const string admin_password = "admin";
+const int max_tables = 10;
+enum class Memberlevel{ vip,svip,ssvip };
+const map<Memberlevel, double>Member_discount = {
+	{Memberlevel::vip,0.0},{Memberlevel::svip,0.1},{Memberlevel::ssvip,0.15}
+};
+const map<Memberlevel, string>Member_name = {
+	{Memberlevel::vip,"普通会员"},{Memberlevel::svip,"高级会员"},{Memberlevel::ssvip,"超级会员"}
+};
+string trim(const string& str) {
+    size_t start = str.find_first_not_of(" \t\n\r");
+    size_t end = str.find_last_not_of(" \t\n\r");
+    return (start == string::npos) ? "" : str.substr(start, end - start + 1);
+}
+bool is_valid_number(const string& str) {
+    if (str.empty()) return false;
+    bool has_dot = false;
+    for (size_t i = 0; i < str.length(); ++i) {
+        if (str[i] == '.') {
+            if (has_dot) return false;
+            has_dot = true;
+        }
+        else if (!isdigit(str[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+bool is_valid_phone(const string& phone) {
+    if (phone.length() != 11) return false;
+    for (char c:phone) {
+        if (!isdigit(c)) return false;
+    }
+    return true;
+}
+bool is_valid_email(const string& email) {
+    return email.find('@') != string::npos && email.find('.') != string::npos;
+}
+void clear_input_buffer() {
+   cin.clear();
+   cin.ignore(numeric_limits<streamsize>::max(), '\n');
+}
+int get_int_input(const string& prompt) {
+    int value;
+    while (true) {
+        cout << prompt;
+        if (cin >> value) {
+            clear_input_buffer();
+            return value;
+        }
+        else {
+            cout << "无效输入，请输入数字。\n";
+            clear_input_buffer();
+        }
+    }
+}
+double get_double_input(const string& prompt) {
+    double value;
+    while (true) {
+        cout << prompt;
+        if (cin >> value) {
+            clear_input_buffer();
+            return value;
+        }
+        else {
+            cout << "无效输入，请输入有效的数字。\n";
+            clear_input_buffer();
+        }
+    }
+}
+string get_string_input(const string& prompt) {
+    string input;
+    cout << prompt;
+    getline(cin, input);
+    return trim(input);
+}
+string get_currenttime() {
+    auto now = chrono::system_clock::now();
+    time_t time = chrono::system_clock::to_time_t(now);
+    tm time_info;
+#ifdef _WIN32
+    localtime_s(&time_info, &time);
+#else
+    localtime_r(&time, &time_info);
+#endif
+    stringstream ss;
+    ss << put_time(&time_info, "%Y-%m-%d %H:%M:%S");
+    return ss.str();
+}
+int generate_unique_id() {
+    static int counter = 1000;
+    return counter++;
+}
+struct Member {
+    int id;
+    string name;
+    string phone;
+    string email;
+    string register_date;
+    Memberlevel level;
+    int points;
+    double total_money;
+    int visit_count;
+    vector<int>order_history;
+    Member(int id = 0, const string& name = "", const string& phone = "",
+        const string& email = "", Memberlevel level = Memberlevel::vip)
+        : id(id), name(name), phone(phone), email(email), level(level),
+        points(0), total_money(0.0), visit_count(0) {
+        register_date = get_currenttime(); 
+    }
+    double get_discount_rate() const {
+        auto it = Member_discount.find(level);
+        return (it != Member_discount.end()) ? it->second : 0.0;
+    }
+    string get_level_name() const {
+        auto it = Member_name.find(level);
+        return (it != Member_name.end()) ? it->second : "未知";
+    }
+    void add_points(double amount) {
+        points = static_cast<int>(amount)+points;
+    }
+    bool use_points(int points_use) {
+        if (points_use <= points) {
+            points = points-points_use;
+            return true;
+        }
+        return false;
+    }
+};
+struct MenuItem {
+    int id;
+    string name;
+    double price;
+    string category;
+    string description;
+    bool is_available;
+    int stock;
+    int calories;
+    vector<string>ingredients;
+    MenuItem(int id = 0, const string& name = "", double price = 0.0,
+        const string& category = "", const string& description = "",
+        bool is_available = true, int stock = 100, int calories = 0)
+        : id(id), name(name), price(price), category(category),
+        description(description), is_available(is_available), 
+        stock(stock), calories(calories) {
+    }
+    bool reduce_stock(int quantity) {
+        if (stock >= quantity) {
+            stock = stock-quantity;
+            return true;
+        }
+        return false;
+    }
+    void add_stock(int quantity) {
+        stock =stock+quantity;
+    }
+};
+struct Coupon {
+    string code;
+    double discount_amount;
+    bool is_percentage;
+    string expiry_date;
+    double min_amount;
+    int usage_limit;
+    int used_count;
+    Coupon(const string& code = "", double discount = 0.0, bool percentage = true,
+        const string& expiry_date = "", double min_amount = 0.0, int limit = 1)
+        : code(code), discount_amount(discount), is_percentage(percentage),
+        expiry_date(expiry_date), min_amount(min_amount),
+        usage_limit(limit), used_count(0) {
+    }
+    bool is_valid(double order_amount) const {
+        if (used_count >= usage_limit) return false;
+        if (order_amount < min_amount) return false;
+        if (expiry_date < get_currenttime()) return false; 
+        return true;
+    }
+    double apply_discount(double order_amount) const {
+        if (!is_valid(order_amount)) return order_amount;
+        if (is_percentage) {
+            return order_amount * (1 - discount_amount);
+        }
+        else {
+            return max(0.0, order_amount - discount_amount);
+        }
+    }
+};
+struct OrderItem {
+    MenuItem item;
+    int quantity;
+    double subtotal;
+    OrderItem(const MenuItem& item = MenuItem(), int quantity = 1)
+        : item(item), quantity(quantity) {
+        subtotal = item.price * quantity;
+    }
+};
+struct Order {
+    int order_id;
+    int table_number;
+    vector<OrderItem>items;
+    double subtotal;
+    double discount;
+    double total;
+    string status;
+    string time;
+    string payment_method;
+    int member_id;
+    string coupon_code;
+    int points_used;
+    double points_earned;
+    Order(int id = 0, int table = 0)
+        : order_id(id), table_number(table), subtotal(0.0), 
+        discount(0.0), total(0.0), status("待处理"), payment_method("现金"),
+        member_id(0), points_used(0), points_earned(0) {
+        time = get_currenttime();
+    }
+    void calculate_totals(double member_discount = 0.0, const Coupon* coupon = NULL) {
+        subtotal = 0.0;
+        for (auto& order_item : items) {
+            order_item.subtotal = order_item.item.price * order_item.quantity;
+            subtotal = subtotal+order_item.subtotal;
+        }
+        double discounted_amount = subtotal;
+        if (member_discount > 0) {
+            discount = subtotal * member_discount;
+            discounted_amount = subtotal - discount;
+        }
+        if (coupon && coupon->is_valid(discounted_amount)) {
+            double coupon_discount = discounted_amount - coupon->apply_discount(discounted_amount);
+            discount = discount+coupon_discount;
+            discounted_amount = discounted_amount-coupon_discount;
+        }
+        total = discounted_amount;
+        points_earned = discounted_amount;
+    }
+    string to_string() const {
+    ostringstream oss;
+        oss << "订单ID:" << order_id
+            << "餐桌:" << table_number
+            << "状态:" << status
+            << "总计:￥" << total
+            << "支付方式:" << payment_method
+            << "时间:" << time;
+        if (member_id > 0) {
+            oss << "会员ID:" << member_id;
+        }
+        return oss.str();
+    }
+    string get_receipt() const {
+    ostringstream oss;
+    oss << "========================================\n";
+    oss << "              餐厅收据\n";
+    oss << "========================================\n";
+    oss << "订单ID:" << order_id << "\n";
+    oss << "餐桌号:" << table_number << "\n";
+    oss << "时间:" << time<< "\n";
+    oss << "========================================\n";
+        for (const auto& item : items) {
+            oss << left << item.item.name
+                << "*" << item.quantity
+                << "￥" << item.subtotal << "\n";
+        }
+    oss << "========================================\n";
+    oss << left <<"小计:" << "￥" << subtotal << "\n";
+        if (discount > 0) {
+            oss << left << "折扣:" << "-￥" << discount << "\n";
+        }
+    oss << left << "总计:" << "￥" << total << "\n";
+        if (points_used > 0) {
+            oss << "使用积分:" << points_used << " 点\n";
+        }
+        if (points_earned > 0) {
+            oss << "获得积分:" << points_earned << " 点\n";
+        }
+    oss << "支付方式:" << payment_method << "\n";
+    oss << "========================================\n";
+        return oss.str();
+    }
+};
+struct Reservation {
+    int id;
+    string customer_name;
+    string phone;
+    int table_number;
+    string date;
+    string time;
+    int people_count;
+    string status;
+    string special_requests;
+    Reservation(int id = 0, const string& customer_name = "", const string& phone = "",
+        int table_number = 0, const string& date = "", const string& time = "",
+        int people_count = 0, const string& special_requests = "")
+        : id(id), customer_name(customer_name), phone(phone), table_number(table_number),
+        date(date), time(time), people_count(people_count), status("确认"),
+        special_requests(special_requests) {
+    }
+};
+struct Customer {
+    int id;
+    string name;
+    string phone;
+    string email;
+    vector<int>order_history;
+    Customer(int id = 0, const string& name = "",
+        const string& phone = "", const string& email = "")
+        : id(id), name(name), phone(phone), email(email) {
+    }
+};
+struct Table {
+    int id;
+    int capacity;
+    bool is_occupied;
+    string location;
+    string type;
+    bool has_window;
+    Table(int id = 0, int capacity = 4, const string& location = "", 
+        const string& type = "大厅", bool window = false)
+        : id(id), capacity(capacity), is_occupied(false), type(type), location(location), has_window(window) {
+    }
+};
+class FileHandler {
+public:
+    static vector<MenuItem> load_menu() {
+        vector<MenuItem>menu;
+        ifstream file(MENU_FILE);
+        if (!file) {
+            cout << "菜单文件未找到,创建默认菜单……\n";
+            create_default_menu();
+            return load_menu();
+        }
+        string line;
+        while (getline(file, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            istringstream iss(line);
+            int id;
+            int is_available;
+            int stock;
+            int calories;
+            double price;
+            string name;
+            string category;
+            string description;
+            if (iss >> id >> ws &&
+                getline(iss, name, '|') &&
+                iss >> price >> ws &&
+                getline(iss, category, '|') &&
+                getline(iss, description, '|') &&
+                iss >> is_available >> stock >> calories) {
+                MenuItem item(id, trim(name), price, trim(category), trim(description), is_available != 0, stock, calories);
+                menu.push_back(item);
+            }
+        }
+        file.close();
+        return menu;
+    }
+    static void save_menu(const vector<MenuItem>& menu) {
+        ofstream file(MENU_FILE);
+        if (!file) {
+            throw runtime_error("无法打开菜单文件进行写入");
+        }
+        file << "#餐厅菜单数据\n";
+        file << "#格式: ID | 名称 | 价格 | 分类 | 描述 | 可用 | 库存 | 卡路里\n";
+        for (const auto& item : menu) {
+            file << item.id << "|"
+                << item.name << "|"
+                << item.price << "|"
+                << item.category << "|"
+                << item.description << "|"
+                << (item.is_available ? 1 : 0) << " "
+                << item.stock << " "
+                << item.calories << "\n";
+        }
+        file.close();
+    }
+    static vector<Order>load_orders() {
+        vector<Order>orders;
+        ifstream file(ORDER_FILE);
+        if (!file) return orders;
+        string line;
+        while (getline(file, line)) {
+            if (line.empty() || line[0] == '#') 
+                continue;
+            istringstream iss(line);
+            int order_id;
+            int table;
+            int member_id;
+            int points_used;
+            double subtotal;
+            double discount;
+            double total;
+            double points_earned;
+            string status;
+            string time;
+            string payment;
+            string coupon_code;
+            if (iss >> order_id >> table >> 
+                subtotal >> discount >> total
+                >> member_id >> points_used >> points_earned >> ws &&
+                getline(iss, status, '|') &&
+                getline(iss, time, '|') &&
+                getline(iss, payment, '|') &&
+                getline(iss, coupon_code, '|')) {
+                Order order(order_id, table);
+                order.subtotal = subtotal;
+                order.discount = discount;
+                order.total = total;
+                order.member_id = member_id;
+                order.points_used = points_used;
+                order.points_earned = points_earned;
+                order.status = trim(status);
+                order.time = trim(time);
+                order.payment_method = trim(payment);
+                order.coupon_code = trim(coupon_code);
+                orders.push_back(order);
+            }
+        }
+        file.close();
+        return orders;
+    }
+    static void save_order(const Order& order) {
+        ofstream file(ORDER_FILE);
+        if (!file) {
+            throw runtime_error("无法打开订单文件进行写入");
+        }
+        file << order.order_id << "|"
+            << order.table_number << "|"
+            << order.subtotal << "|"
+            << order.discount << "|" 
+            << order.total << "|"
+            << order.member_id << "|" 
+            << order.points_used << "|" 
+            << order.points_earned << "|"
+            << order.status << "|"
+            << order.time << "|"
+            << order.payment_method << "|"
+            << order.coupon_code << "\n";
+        file.close();
+    }
+    static vector<Member>load_members() {
+        vector<Member>members;
+        ifstream file(MEMBER_FILE);
+        if (!file) 
+            return members;
+        string line;
+        while (getline(file, line)) {
+            if (line.empty() || line[0] == '#') 
+                continue;
+            istringstream iss(line);
+            int id;
+            int points;
+            int visit_count;
+            int level;
+            double total_money;
+            string name;
+            string phone;
+            string email;
+            string register_date;
+            if (iss >> id >> ws &&
+                getline(iss, name, '|') &&
+                getline(iss, phone, '|') &&
+                getline(iss, email, '|') &&
+                getline(iss, register_date, '|') &&
+                iss >> level >> points >> total_money >> visit_count) {
+                Member member(id, trim(name), trim(phone), trim(email), static_cast<Memberlevel>(level));
+                member.register_date = trim(register_date);
+                member.points = points;
+                member.total_money = total_money;
+                member.visit_count = visit_count;
+                members.push_back(member);
+            }
+        }
+        file.close();
+        return members;
+    }
+    static void save_member(const Member& member) {
+        ofstream file(MEMBER_FILE);
+        if (!file) {
+            throw runtime_error("无法打开会员文件进行写入");
+        }
+        file << member.id << "|"
+            << member.name << "|"
+            << member.phone << "|"
+            << member.email << "|"
+            << member.register_date << "|"
+            << static_cast<int>(member.level) << "|"
+            << member.points << "|"
+            << member.total_money << "|"
+            << member.visit_count << "\n";
+        file.close();
+    }
+    static void create_default_menu() {
+        vector<MenuItem>default_menu = {
+            {1, "意大利碳水面", 12.99, "主菜", "经典意大利面食", true, 50, 450},
+            {2, "玛格丽特披萨", 10.50, "主菜", "番茄, 马苏里拉奶酪, 罗勒", true, 30, 600},
+            {3, "凯撒沙拉", 8.75, "开胃菜", "罗马生菜配面包丁", true, 40, 320},
+            {4, "莫吉托", 7.99, "饮料", "朗姆酒, 薄荷, 青柠, 苏打水", true, 100, 150},
+            {5, "提拉米苏", 6.50, "甜点", "咖啡味意大利甜点", true, 25, 280},
+            {6, "烤三文鱼", 15.99, "主菜", "配柠檬黄油酱", true, 20, 520}
+        };
+        save_menu(default_menu);
+    }
+    static vector<Reservation>load_reservations() {
+        vector<Reservation>reservations;
+        ifstream file(RESERVATION_FILE);
+        if (!file) 
+            return reservations;
+        string line;
+        while (getline(file, line)) {
+            if (line.empty() || line[0] == '#') 
+                continue;
+            istringstream iss(line);
+            int id;
+            int table;
+            int people;
+            string name;
+            string phone;
+            string date;
+            string time;
+            string status;
+            string requests;
+            if (iss >> id >> ws &&
+                getline(iss, name, '|') &&
+                getline(iss, phone, '|') &&
+                iss >> table >> ws &&
+                getline(iss, date, '|') &&
+                getline(iss, time, '|') &&
+                iss >> people >> std::ws &&
+                getline(iss, status, '|') &&
+                getline(iss, requests, '|')) {
+                Reservation reservation(id, trim(name), trim(phone), table,
+                    trim(date), trim(time), people, trim(requests));
+                reservation.status = trim(status);
+                reservations.push_back(reservation);
+            }
+        }
+        file.close();
+        return reservations;
+    }
+    static void save_reservation(const Reservation& reservation) {
+        ofstream file(RESERVATION_FILE);
+        if (!file) {
+            throw runtime_error("无法打开预订文件进行写入");
+        }
+        file << reservation.id << "|"
+            << reservation.customer_name << "|"
+            << reservation.phone << "|"
+            << reservation.table_number << "|"
+            << reservation.date << "|"
+            << reservation.time << "|"
+            << reservation.people_count << "|"
+            << reservation.status << "|"
+            << reservation.special_requests << "\n";
+        file.close();
+    }
+};
+class RestaurantSystem {
+private:
+    vector<MenuItem>menu;
+    vector<Order>orders;
+    vector<Table>tables;
+    vector<Member>members;
+    vector<Reservation>reservations;
+    map<string, Coupon>coupons;
+    int next_order_id;
+    int next_member_id;
+    int next_reservation_id;
+public:
+    RestaurantSystem() : next_order_id(1000), next_member_id(100), next_reservation_id(1) {
+        menu = FileHandler::load_menu();
+        orders = FileHandler::load_orders();
+        reservations = FileHandler::load_reservations();
+        members = FileHandler::load_members();
+        initialize_tables();
+        if (!orders.empty()) {
+            int max_id = 0;
+            for (const auto& order : orders) {
+                if (order.order_id > max_id) {
+                    max_id = order.order_id;
+                }
+            }
+            next_order_id = max_id + 1;
+        }
+        if (!members.empty()) {
+            int max_id = 0;
+            for (const auto& member : members) {
+                if (member.id > max_id) {
+                    max_id = member.id;
+                }
+            }
+            next_member_id = max_id + 1;
+        }
+        if (!reservations.empty()) {
+            int max_id = 0;
+            for (const auto& reservation : reservations) {
+                if (reservation.id > max_id) {
+                    max_id = reservation.id;
+                }
+            }
+            next_reservation_id = max_id + 1;
+        }
+    }
+    void initialize_tables() {
+        tables.clear();
+        for (int i = 1; i <= 6; ++i) {
+            string location = (i % 2 == 0) ? "A区" : "B区";
+            bool has_window = (i <= 3); 
+            int capacity = (i % 3 == 0) ? 6 : ((i % 3 == 1) ? 4 : 8);
+            tables.push_back(Table(i, capacity, location, "大厅", has_window));
+        }
+        for (int i = 7; i <= max_tables; ++i) {
+            string location = "包厢区";
+            int capacity;
+            switch (i) {
+            case 7: case 8:
+                capacity = 8;  
+                break;
+            case 9:
+                capacity = 12; 
+                break;
+            case 10:
+                capacity = 20; 
+                break;
+            default:
+                capacity = 8;
+            }
+            tables.push_back(Table(i, capacity, location, "包厢", false));
+        }
+    }
+    void show_main_menu() {
+        while (true) {
+            clear_screen();
+            cout << "========================================\n";
+            cout << "           智能餐厅管理系统\n";
+            cout << "========================================\n";
+            cout << "1.开始新订单\n";
+            cout << "2.查看订单状态\n";
+            cout << "3.会员服务\n";
+            cout << "4.餐桌预订\n";
+            cout << "5.管理员登录\n";
+            cout << "6.查看今日特惠\n";
+            cout << "7.退出系统\n";
+            cout << "========================================\n";
+            int choice = get_int_input("请输入您的选择:");
+            switch (choice) {
+            case 1: handle_new_order(); 
+                break;
+            case 2: view_order_status(); 
+                break;
+            case 3: member_services(); 
+                break;
+            case 4: reservation_system(); 
+                break;
+            case 5: admin_login(); 
+                break;
+            case 6: show_daily_specials(); 
+                break;
+            case 7:
+                cout << "\n感谢使用本系统，再见！\n";
+                return;
+            default:
+                cout <<"无效选择，请重试。\n";
+                pause();
+            }
+        }
+    }
+    void member_services() {
+        while (true) {
+            clear_screen();
+            cout << "===会员服务===\n";
+            cout << "1.会员注册\n";
+            cout << "2.会员登录\n";
+            cout << "3.查询会员信息\n";
+            cout << "4.积分兑换\n";
+            cout << "5.返回主菜单\n";
+            cout << "================\n";
+            int choice = get_int_input("请输入您的选择: ");
+            switch (choice) {
+            case 1: register_member(); 
+                break;
+            case 2: login_member(); 
+                break;
+            case 3: member_information(); 
+                break;
+            case 4: valid_points(); 
+                break;
+            case 5: 
+                return;
+            default:
+                cout << "无效选择，请重试。\n";
+                pause();
+            }
+        }
+    }
+    void register_member() {
+        clear_screen();
+        cout << "===会员注册===\n";
+        string name = get_string_input("请输入姓名:");
+        string phone = get_string_input("请输入手机号:");
+        for (const auto& member : members) {
+            if (member.phone == phone) {
+                cout << "该手机号已注册为会员！\n";
+                pause();
+                return;
+            }
+        }
+        string email = get_string_input("请输入邮箱:");
+        cout << "\n请选择会员等级:\n";
+        cout << "1.普通会员(无折扣)\n";
+        cout << "2.高级会员(9折优惠)\n";
+        cout << "3.超级会员(85折优惠)\n";
+        int level_choice = get_int_input("请选择(1-3):");
+        Memberlevel level;
+        switch (level_choice) {
+        case 1: level = Memberlevel::vip; 
+            break;
+        case 2: level = Memberlevel::svip; 
+            break;
+        case 3: level = Memberlevel::ssvip; 
+            break;
+        default:
+            cout << "无效选择，默认为普通会员。\n";
+            level = Memberlevel::vip;
+        }
+        Member new_member(next_member_id++, name, phone, email, level);
+        members.push_back(new_member);
+        FileHandler::save_member(new_member);
+        cout << "\n注册成功！\n";
+        cout << "会员ID:" << new_member.id << "\n";
+        cout << "会员等级:" << new_member.get_level_name() << "\n";
+        cout << "折扣率:" << (new_member.get_discount_rate() * 100) << "%\n";
+        cout << "欢迎加入我们的会员计划！\n";
+        pause();
+    }
+    void login_member() {
+        clear_screen();
+        cout << "===会员登录===\n";
+        string phone = get_string_input("请输入手机号: ");
+        for (auto& member : members) {
+            if (member.phone == phone) {
+                cout << "\n登录成功！\n";
+                cout << "欢迎回来" << member.name << "!\n";
+                cout << "会员等级:" << member.get_level_name() << "\n";
+                cout << "当前积分:" << member.points << "\n";
+                cout << "总消费金额:￥" << member.total_money << "\n";
+                check_member_upgrade(member);
+                pause();
+                return;
+            }
+        }
+        cout << "未找到该手机号对应的会员。\n";
+        pause();
+    }
+    void check_member_upgrade(Member& member) {
+        if (member.level == Memberlevel::vip && member.total_money >= 500) {
+            cout << "\n恭喜！您已满足升级到高级会员的条件！\n";
+            cout << "是否立即升级？(y/n): ";
+            string choice = get_string_input("");
+            if (choice == "y" || choice == "Y") {
+                member.level = Memberlevel::svip;
+                cout << "升级成功！您现在享受9折优惠！\n";
+            }
+        }
+        else if (member.level == Memberlevel::svip && member.total_money >= 1000) {
+            cout << "\n恭喜！您已满足升级到超级会员的条件！\n";
+            cout << "是否立即升级？(y/n): ";
+            string choice = get_string_input("");
+            if (choice == "y" || choice == "Y") {
+                member.level = Memberlevel::ssvip;
+                cout << "升级成功！您现在享受85折优惠！\n";
+            }
+        }
+    }
+    void member_information() {
+        clear_screen();
+        cout << "===查询会员信息===\n";
+        string phone = get_string_input("请输入手机号:");
+        for (const auto& member : members) {
+            if (member.phone == phone) {
+                cout << "\n===会员信息===\n";
+                cout << "会员ID:" << member.id << "\n";
+                cout << "姓名:" << member.name << "\n";
+                cout << "手机号:" << member.phone << "\n";
+                cout << "邮箱:" << member.email << "\n";
+                cout << "会员等级:" << member.get_level_name() << "\n";
+                cout << "折扣率:" << (member.get_discount_rate() * 100) << "%\n";
+                cout << "当前积分:" << member.points << "\n";
+                cout << "总消费金额:￥" <<member.total_money << "\n";
+                cout << "到店次数:" << member.visit_count << "\n";
+                cout << "注册日期:" << member.register_date << "\n";
+                pause();
+                return;
+            }
+        }
+        cout << "未找到该手机号对应的会员。\n";
+        pause();
+    }
+    void valid_points() {
+        clear_screen();
+        cout << "===积分兑换===\n";
+        string phone = get_string_input("请输入手机号:");
+        for (auto& member : members) {
+            if (member.phone == phone) {
+                cout << "\n当前积分:" << member.points << "\n";
+                cout << "\n可兑换项目:\n";
+                cout << "1.50积分=￥5代金券\n";
+                cout << "2.100积分=￥12代金券\n";
+                cout << "3.200积分=￥25代金券\n";
+                cout << "4.500积分=免费主菜一份\n";
+                int choice = get_int_input("请选择兑换项目:");
+                int required_points = 0;
+                string reward;
+                switch (choice) {
+                case 1: required_points = 50; 
+                    reward = "5元代金券"; 
+                    break;
+                case 2: required_points = 100; 
+                    reward = "12元代金券"; 
+                    break;
+                case 3: required_points = 200; 
+                    reward = "25元代金券"; 
+                    break;
+                case 4: required_points = 500; 
+                    reward = "免费主菜一份"; 
+                    break;
+                default:
+                    cout << "无效选择。\n";
+                    pause();
+                    return;
+                }
+                if (member.points >= required_points) {
+                    member.points = member.points-required_points;
+                    cout << "\n兑换成功！获得:" << reward << "\n";
+                    cout << "剩余积分:" << member.points << "\n";
+                    string coupon_code = "PTS" + to_string(member.id) + to_string(time(NULL) % 1000);
+                    double discount_value = (choice == 4) ? 25.0 : (choice == 1 ? 5.0 : (choice == 2 ? 12.0 : 25.0));
+                    coupons[coupon_code] = Coupon(coupon_code, discount_value, false, "2024-12-31", 0.0, 1);
+                    cout << "优惠券代码:" << coupon_code << "\n";
+                    cout << "请在结账时使用此优惠券代码！\n";
+                }
+                else {
+                    cout << "积分不足！需要" << required_points << "积分，当前只有" << member.points << "积分。\n";
+                }
+                pause();
+                return;
+            }
+        }
+        cout << "未找到该手机号对应的会员。\n";
+        pause();
+    }
+    void reservation_system() {
+        while (true) {
+            clear_screen();
+            cout << "===餐桌预订===\n";
+            cout << "1.新建预订\n";
+            cout << "2.查询预订\n";
+            cout << "3.取消预订\n";
+            cout << "4.查看可用餐桌\n";
+            cout << "5.返回主菜单\n";
+            cout << "================\n";
+            int choice = get_int_input("请输入您的选择: ");
+            switch (choice) {
+            case 1: make_reservation(); 
+                break;
+            case 2: view_reservation(); 
+                break;
+            case 3: cancel_reservation(); 
+                break;
+            case 4: view_available_tables(); 
+                break;
+            case 5: 
+                return;
+            default:
+                cout << "无效选择，请重试。\n";
+                pause();
+            }
+        }
+    }
+    void make_reservation() {
+        clear_screen();
+        cout << "===新建预订===\n";
+        string name = get_string_input("请输入姓名:");
+        string phone = get_string_input("请输入手机号:");
+        string date = get_string_input("请输入日期(YYYY-MM-DD):");
+        string time = get_string_input("请输入时间(HH:MM):");
+        int people = get_int_input("请输入人数:");
+        string requests = get_string_input("特殊要求(靠窗,包间):");
+        int table_num = find_suitable_table(people, date, time);
+        if (table_num == -1) {
+            cout << "抱歉，没有合适的餐桌可用。\n";
+            pause();
+            return;
+        }
+        Reservation new_reservation(next_reservation_id++, name, phone, table_num, date, time, people, requests);
+        reservations.push_back(new_reservation);
+        FileHandler::save_reservation(new_reservation);
+        cout << "\n预订成功！\n";
+        cout << "预订ID:" << new_reservation.id << "\n";
+        cout << "餐桌号:" << new_reservation.table_number << "\n";
+        cout << "时间:" << new_reservation.date << " " << new_reservation.time << "\n";
+        cout << "请准时到店，如有变动请提前联系我们。\n";
+        pause();
+    }
+    int find_suitable_table(int people, const string& date, const string& time) {
+        for (auto& table : tables) {
+            if (table.capacity >= people) {
+                bool is_available = true;
+                for (const auto& reservation : reservations) {
+                    if (reservation.table_number == table.id &&
+                        reservation.date == date &&
+                        reservation.time == time &&
+                        reservation.status == "确认") {
+                        is_available = false;
+                        break;
+                    }
+                }
+                if (is_available) {
+                    return table.id;
+                }
+            }
+        }
+        return -1;
+    }
+    void view_reservation() {
+        clear_screen();
+        cout << "===查询预订===\n";
+        string phone = get_string_input("请输入手机号:");
+        bool found = false;
+        for (const auto& reservation : reservations) {
+            if (reservation.phone == phone && reservation.status == "确认") {
+                if (!found) {
+                    cout << "\n您的预订信息:\n";
+                    found = true;
+                }
+                cout << "预订ID:" << reservation.id << "\n";
+                cout << "姓名:" << reservation.customer_name << "\n";
+                cout << "餐桌号:" << reservation.table_number << "\n";
+                cout << "时间:" << reservation.date << " " << reservation.time << "\n";
+                cout << "人数:" << reservation.people_count << "\n";
+                cout << "特殊要求:" << reservation.special_requests << "\n";
+                cout << "状态:" << reservation.status << "\n";
+                cout << "------------------------\n";
+            }
+        }
+        if (found) {
+            pause();
+        }
+        else {
+            cout << "未找到该手机号的预订记录。\n";
+            pause();
+        }
+    }
+    void cancel_reservation() {
+        clear_screen();
+        cout << "===取消预订===\n";
+        int reservation_id = get_int_input("请输入预订ID:");
+        for (auto& reservation : reservations) {
+            if (reservation.id == reservation_id && reservation.status == "确认") {
+                reservation.status = "取消";
+                cout << "预订已取消。\n";
+                pause();
+                return;
+            }
+        }
+        cout << "未找到该预订ID或预订已取消。\n";
+        pause();
+    }
+    void view_available_tables() {
+        clear_screen();
+        cout << "===可用餐桌===\n";
+        string date = get_string_input("请输入日期(YYYY-MM-DD): ");
+        string time = get_string_input("请输入时间(HH:MM): ");
+        cout << "\n可用餐桌:\n";
+        for (const auto& table : tables) {
+            bool is_available = true;
+            for (const auto& reservation : reservations) {
+                if (reservation.table_number == table.id &&
+                    reservation.date == date &&
+                    reservation.time == time &&
+                    reservation.status == "确认") {
+                    is_available = false;
+                    break;
+                }
+            }
+            if (is_available) {
+                cout << "餐桌" << table.id
+                    << "(类型:" << table.type
+                    << ",容量:" << table.capacity
+                    << ",位置:" << table.location;
+                if (table.type == "大厅" && table.has_window) {
+                    cout << ",靠窗";
+                }
+                cout << ")\n";
+            }
+        }
+        pause();
+    }
+    void handle_new_order() {
+        clear_screen();
+        cout << "===开始新订单===\n";
+        int table_num = select_table();
+        if (table_num == -1) 
+            return;
+        Order new_order(next_order_id++, table_num);
+        int member_id = 0;
+        double member_discount = 0.0;
+        cout << "\n您是会员吗？(y/n): ";
+        string is_member = get_string_input("");
+        if (is_member == "y" || is_member == "Y") {
+            string phone = get_string_input("请输入会员手机号:");
+            for (auto& member : members) {
+                if (member.phone == phone) {
+                    member_id = member.id;
+                    member_discount = member.get_discount_rate();
+                    cout << "欢迎，" << member.name << "！享受" << (member_discount * 100) << "%折扣\n";
+                    break;
+                }
+            }
+            if (member_id == 0) {
+                cout << "未找到会员信息，按非会员处理。\n";
+            }
+        }
+        new_order.member_id = member_id;
+        while (true) {
+            clear_screen();
+            cout << "餐桌" << table_num << "|订单ID:" << new_order.order_id << "\n";
+            if (member_id > 0) {
+                cout << "会员折扣:" << (member_discount * 100) << "%\n";
+            }
+            display_menu();
+            int item_id = get_int_input("\n输入菜品ID(0结束):");
+            if (item_id == 0) 
+                break;
+            auto it = find_if(menu.begin(), menu.end(),
+                [item_id](const MenuItem& item) { 
+                    return item.id == item_id && item.is_available; });
+            if (it == menu.end()) {
+                cout << "无效或不可用的菜品ID。\n";
+                pause();
+                continue;
+            }
+            if (it->stock <= 0) {
+                cout << "该菜品已售罄。\n";
+                pause();
+                continue;
+            }
+            int quantity = get_int_input("输入数量:");
+            if (quantity <= 0) {
+                cout << "数量必须为正数。\n";
+                pause();
+                continue;
+            }
+            if (it->stock < quantity) {
+                cout << "库存不足，只剩" << it->stock << "份。\n";
+                pause();
+                continue;
+            }
+            it->reduce_stock(quantity);
+            new_order.items.push_back(OrderItem(*it, quantity));
+            cout << "\n已添加:" << quantity << "x" << it->name << "\n";
+            pause();
+        }
+        if (new_order.items.empty()) {
+            cout << "订单已取消-未选择任何菜品。\n";
+            pause();
+            return;
+        }
+        const Coupon* applied_coupon = NULL;
+        cout << "\n有优惠券吗？(y/n): ";
+        string has_coupon = get_string_input("");
+        if (has_coupon == "y" || has_coupon == "Y") {
+            string coupon_code = get_string_input("请输入优惠券代码: ");
+            auto coupon_it = coupons.find(coupon_code);
+            if (coupon_it != coupons.end() && coupon_it->second.is_valid(new_order.subtotal)) {
+                applied_coupon = &coupon_it->second;
+                new_order.coupon_code = coupon_code;
+                cout << "优惠券应用成功！\n";
+            }
+            else {
+                cout << "优惠券无效或已过期。\n";
+            }
+            pause();
+        }
+        new_order.calculate_totals(member_discount, applied_coupon);
+        clear_screen();
+        cout << new_order.get_receipt();
+        if (process_payment(new_order)) {
+            orders.push_back(new_order);
+            FileHandler::save_order(new_order);
+            if (member_id > 0) {
+                for (auto& member : members) {
+                    if (member.id == member_id) {
+                        member.total_money = member.total_money+new_order.total;
+                        member.visit_count++;
+                        member.add_points(new_order.points_earned);
+                        new_order.points_earned = static_cast<int>(new_order.points_earned);
+                        break;
+                    }
+                }
+            }
+            cout << "\n订单确认成功！感谢您的惠顾。\n";
+        }
+        else {
+            cout << "\n支付过程中订单已取消。\n";
+            for (const auto& item : new_order.items) {
+                for (auto& menu_item : menu) {
+                    if (menu_item.id == item.item.id) {
+                        menu_item.add_stock(item.quantity);
+                        break;
+                    }
+                }
+            }
+            for (auto& table : tables) {
+                if (table.id == table_num) {
+                    table.is_occupied = false;
+                    break;
+                }
+            }
+        }
+        pause();
+    }
+    void show_daily_specials() {
+        clear_screen();
+        cout << "===今日特惠===\n";
+        cout << "日期: " << get_currenttime() << "\n\n";
+        cout << "特价菜品:\n";
+        cout << "1.意大利碳水面-原价:￥12.99|特价:￥10.99\n";
+        cout << "2.玛格丽特披萨-原价:￥10.50|特价:￥8.99\n";
+        cout << "3.凯撒沙拉-原价:￥8.75|特价:￥7.25\n";
+        cout << "会员专属优惠:\n";
+        cout << "-高级会员:全场9折\n";
+        cout << "-超级会员:全场85折\n";
+        cout << "-新会员注册即送100积分\n\n";
+        cout << "促销活动:\n";
+        cout << "-消费满100元送20元优惠券\n";
+        cout << "-生日当天消费享8折优惠\n";
+        cout << "-每周三会员双倍积分\n";
+        pause();
+    }
+    int select_table() {
+        while (true) {
+            clear_screen();
+            cout << "===选择餐桌===\n";
+            cout << "可用餐桌:\n";
+            bool has_available = false;
+            for (const auto& table : tables) {
+                if (!table.is_occupied) {
+                    cout << "餐桌" << table.id
+                        << "(类型:" << table.type
+                        << ",容量:" << table.capacity
+                        << ",位置:" << table.location;
+                    if (table.type == "大厅" && table.has_window) {
+                        cout << ",靠窗";
+                    }
+                    cout << ")\n";
+                    has_available = true;
+                }
+            }
+            if (!has_available) {
+                cout << "无可用餐桌，请稍候。\n";
+                string input = get_string_input("\n按回车键重新检查或输入 'q' 取消: ");
+                if (input == "q" || input == "Q") {
+                    return -1;
+                }
+                continue;
+            }
+            int table_number = get_int_input("\n输入餐桌号: ");
+            auto it = find_if(tables.begin(), tables.end(),
+                [table_number](const Table& t) { return t.id == table_number; });
+            if (it == tables.end()) {
+                cout << "无效的餐桌号，请重试。\n";
+                pause();
+            }
+            else if (it->is_occupied) {
+                cout << "餐桌已被占用，请重试。\n";
+                pause();
+            }
+            else {
+                it->is_occupied = true;
+                return table_number;
+            }
+        }
+    }
+    bool process_payment(Order& order) {
+        clear_screen();
+        cout << "===支付处理===\n";
+        cout << order.get_receipt();
+        cout << "\n支付方式:\n";
+        cout << "1.现金\n";
+        cout << "2.信用卡\n";
+        cout << "3.移动支付\n";
+        cout << "4.取消订单\n";
+        int choice = get_int_input("\n选择支付方式:");
+        switch (choice) {
+        case 1:
+            order.payment_method = "现金";
+            handle_cash_payment(order.total);
+            break;
+        case 2:
+            order.payment_method = "信用卡";
+            handle_card_payment(order.total);
+            break;
+        case 3:
+            order.payment_method = "移动支付";
+            handle_mobile_payment(order.total);
+            break;
+        case 4:
+            cout << "\n订单已取消。\n";
+            return false;
+        default:
+            cout << "\n无效选择，订单已取消。\n";
+            return false;
+        }
+        return true;
+    }
+    void handle_cash_payment(double amount) {
+        cout << "\n请支付￥" << amount << " 现金。\n";
+        double paid = get_double_input("请输入实收金额:");
+        if (paid < amount) {
+            cout << "金额不足！\n";
+            handle_cash_payment(amount);
+        }
+        else {
+            double change = paid - amount;
+            cout << "支付成功！找零:￥" << change << "\n";
+        }
+    }
+    void handle_card_payment(double amount) {
+        cout << "\n刷卡/插卡\n";
+        cout << "处理金额:￥" << amount << "\n";
+        cout << "处理中";
+        for (int i = 0; i < 3; ++i) {
+            cout << ".";
+            cout.flush();
+        }
+        cout << "\n支付成功！\n";
+    }
+    void handle_mobile_payment(double amount) {
+        cout << "\n请用手机扫描二维码\n";
+        cout << "支付金额:￥" << amount << "\n";
+        cout << "等待支付确认";
+        for (int i = 0; i < 3; ++i) {
+            cout << ".";
+            cout.flush();
+        }
+        cout << "\n支付成功！\n";
+    }
+    void admin_login() {
+        clear_screen();
+        cout << "=== 管理员登录 ===\n";
+        string password = get_string_input("请输入管理员密码:");
+        if (password == admin_password) {
+            admin_menu();
+        }
+        else {
+            cout << "\n密码错误！\n";
+            pause();
+        }
+    }
+    void admin_menu() {
+        while (true) {
+            clear_screen();
+            cout << "===管理员菜单===\n";
+            cout << "1.管理菜单项\n";
+            cout << "2.查看所有订单\n";
+            cout << "3.更新订单状态\n";
+            cout << "4.查看餐桌状态\n";
+            cout << "5.生成详细报告\n";
+            cout << "6.返回主菜单\n";
+            cout << "======================\n";
+            int choice = get_int_input("请输入您的选择: ");
+            switch (choice) {
+            case 1: manage_menu(); 
+                break;
+            case 2: view_all_orders(); 
+                break;
+            case 3: update_order_status(); 
+                break;
+            case 4: view_tables_status(); 
+                break;
+            case 5: generate_detailed_report(); 
+                break;
+            case 6: 
+                return;
+            default:
+                cout << "无效选择。请重试。\n";
+                pause();
+            }
+        }
+    }
+    void manage_menu() {
+        while (true) {
+            clear_screen();
+            cout << "===菜单管理===\n";
+            cout << "1.添加新菜品\n";
+            cout << "2.编辑现有菜品\n";
+            cout << "3.切换菜品可用性\n";
+            cout << "4.查看完整菜单\n";
+            cout << "5.返回管理员菜单\n";
+            cout << "====================\n";
+            int choice = get_int_input("请输入您的选择:");
+            switch (choice) {
+            case 1: add_menu_item(); 
+                break;
+            case 2: edit_menu_item(); 
+                break;
+            case 3: item_availability(); 
+                break;
+            case 4:
+                display_menu();
+                pause();
+                break;
+            case 5: 
+                return;
+            default:
+                cout << "无效选择，请重试。\n";
+                pause();
+            }
+        }
+    }
+    void add_menu_item() {
+        clear_screen();
+        cout << "===添加新菜品===\n";
+        int id = generate_unique_id();
+        string name = get_string_input("输入菜品名称:");
+        double price = get_double_input("输入价格:");
+        string category = get_string_input("输入分类:");
+        string description = get_string_input("输入描述:");
+        menu.push_back(MenuItem(id, name, price, category, description, true));
+        FileHandler::save_menu(menu);
+        cout << "\n菜品添加成功！\n";
+        cout << "ID:" << id << "|名称:" << name
+            << "|价格:￥" << price << "\n";
+        pause();
+    }
+    void edit_menu_item() {
+        clear_screen();
+        cout << "===编辑菜品===\n";
+        display_menu();
+        int id = get_int_input("\n输入要编辑的菜品ID:");
+        auto it = find_if(menu.begin(), menu.end(),
+            [id](const MenuItem& item) { 
+                return item.id == id; });
+        if (it == menu.end()) {
+            cout << "未找到该菜品。\n";
+            pause();
+            return;
+        }
+        cout << "\n正在编辑:" << it->name << "\n";
+        string name = get_string_input("新名称(直接回车保持当前):");
+        if (!name.empty()) it->name = name;
+        string price_str = get_string_input("新价格(直接回车保持当前):");
+        if (!price_str.empty() && is_valid_number(price_str)) {
+            it->price = stod(price_str);
+        }
+        string category = get_string_input("新分类(直接回车保持当前):");
+        if (!category.empty()) it->category = category;
+        string description = get_string_input("新描述(直接回车保持当前):");
+        if (!description.empty()) it->description = description;
+        FileHandler::save_menu(menu);
+        cout << "\n菜品更新成功！\n";
+        pause();
+    }
+    void item_availability() {
+        clear_screen();
+        cout << "===切换菜品可用性===\n";
+        display_menu();
+        int id = get_int_input("\n输入菜品ID: ");
+        auto it = find_if(menu.begin(), menu.end(),
+            [id](const MenuItem& item) { return item.id == id; });
+        if (it == menu.end()) {
+            cout << "未找到该菜品。\n";
+        }
+        else {
+            it->is_available = !it->is_available;
+            FileHandler::save_menu(menu);
+            cout << "\n可用性已更新:"
+                << (it->is_available ? "可用" : "不可用") << "\n";
+        }
+        pause();
+    }
+    void view_order_status() {
+        clear_screen();
+        cout << "===查看订单状态===\n";
+        int order_id = get_int_input("请输入您的订单ID: ");
+        auto it = find_if(orders.begin(), orders.end(),
+            [order_id](const Order& o) { 
+                return o.order_id == order_id; });
+        if (it != orders.end()) {
+            cout << "\n订单详情:\n";
+            cout << it->to_string() << "\n";
+            cout << "\n菜品:\n";
+            for (const auto& item : it->items) {
+                cout << "-" << item.quantity << "*" << item.item.name << "\n";
+            }
+        }
+        else {
+            cout << "\n未找到该订单ID。\n";
+        }
+        pause();
+    }
+    void view_all_orders() {
+        clear_screen();
+        cout << "===所有订单===\n";
+        if (orders.empty()) {
+            cout << "未找到订单。\n";
+        }
+        else {
+            for (const auto& order : orders) {
+                cout << order.to_string() << "\n";
+            }
+        }
+        pause();
+    }
+    void update_order_status() {
+        clear_screen();
+        cout << "===更新订单状态===\n";
+        view_all_orders();
+        if (orders.empty()) {
+            pause();
+            return;
+        }
+        int order_id = get_int_input("\n输入要更新的订单ID:");
+        auto it = find_if(orders.begin(), orders.end(),
+            [order_id](const Order& o) { 
+                return o.order_id == order_id; });
+        if (it == orders.end()) {
+            cout << "未找到该订单。\n";
+        }
+        else {
+            cout << "\n当前状态: " << it->status << "\n";
+            cout << "1.待处理\n";
+            cout << "2.准备中\n";
+            cout << "3.已完成\n";
+            int choice = get_int_input("选择新状态:");
+            switch (choice) {
+            case 1: it->status = "待处理"; 
+                break;
+            case 2: it->status = "准备中"; 
+                break;
+            case 3: it->status = "已完成"; 
+                break;
+            default:
+                cout << "无效选择，状态未改变。\n";
+                pause();
+                return;
+            }
+            if (it->status == "已完成") {
+                for (auto& table : tables) {
+                    if (table.id == it->table_number) {
+                        table.is_occupied = false;
+                        break;
+                    }
+                }
+            }
+            remove(ORDER_FILE.c_str());
+            for (const auto& order : orders) {
+                FileHandler::save_order(order);
+            }
+            cout << "状态更新成功。\n";
+        }
+        pause();
+    }
+    void view_tables_status() {
+        clear_screen();
+        cout << "===餐桌状态===\n";
+        for (const auto& table : tables) {
+            cout << "餐桌" << table.id
+                << " (容量:" << table.capacity << ")-"
+                << (table.is_occupied ? "已占用" : "可用") << "\n";
+        }
+        pause();
+    }
+    void generate_sales_report() {
+        clear_screen();
+        cout << "===每日销售报告===\n";
+        cout << "日期: " << get_currenttime() << "\n\n";
+        if (orders.empty()) {
+            cout << "今日无销售。\n";
+            pause();
+            return;
+        }
+        double total_sales = 0.0;
+        int total_orders = 0;
+        for (const auto& order : orders) {
+            total_sales = total_sales+order.total;
+            total_orders++;
+        }
+        cout << "总订单数:" << total_orders << "\n";
+        cout << "总收入:￥" << total_sales << "\n";
+        pause();
+    }
+    void generate_detailed_report() {
+        clear_screen();
+        cout << "===详细销售报告===\n";
+        cout << "生成时间: " << get_currenttime() << "\n";
+        if (orders.empty()) {
+            cout << "无订单报告。\n";
+            pause();
+            return;
+        }
+        double total_revenue = 0.0;
+        int total_items = 0;
+        cout <<left <<setw(8) << "订单ID"
+            <<setw(8) << "餐桌"
+            <<setw(8) << "时间"
+            <<setw(8) << "状态"
+            <<setw(8) << "总计"
+            << "支付方式\n";
+        cout << string(55, '-') << "\n";
+        for (const auto& order : orders) {
+            total_revenue += order.total;
+            for (const auto& item : order.items) {
+                total_items += item.quantity;
+            }
+            cout <<setw(8) << order.order_id
+                <<setw(8) << order.table_number
+                <<setw(8) << order.time.substr()
+                <<setw(8) << order.status
+                << "￥" <<setw(8) <<order.total
+                << order.payment_method << "\n";
+        }
+        cout << string(55, '-') << "\n";
+        cout << "总订单数:" << orders.size()
+            << "|总菜品数:" << total_items
+            << "|总收入:￥"
+            << total_revenue << "\n";
+        pause();
+    }
+    void display_menu() const {
+        cout << "\n" << left
+            << setw(8) << "ID"          
+            << setw(25) << "名称"     
+            << setw(10) << "价格"
+            << setw(15) << "分类"
+            << setw(8) << "库存"
+            << "状态\n";
+        cout << string(70, '-') << "\n";
+        for (const auto& item : menu) {
+            if (!item.is_available) continue;
+            string display_name = item.name;
+            if (display_name.length() > 25) {
+                display_name = display_name.substr(0, 20);
+            }
+            string display_category = item.category;
+            if (display_category.length() > 25) {
+                display_category = display_category.substr(0, 20);
+            }
+            cout <<setw(5) << item.id
+                <<setw(5) << display_name
+                << "￥" << setw(5) <<item.price
+                <<setw(5) << display_category
+                <<setw(5) << item.stock
+                << "可用\n";
+        }
+    }
+    void clear_screen() {
+#ifdef _WIN32
+        system("cls");
+#else
+        system("clear");
+#endif
+    }
+    void pause() {
+        cout << "\n按回车键继续";
+        clear_input_buffer();
+    }
+};
+int main() {
+    try {
+        cout << "正在初始化智能餐厅管理系统\n";
+        cout << "检查数据文件\n";
+        ifstream test_file(MENU_FILE);
+        if (!test_file) {
+            cout << "菜单文件不存在，将创建默认菜单\n";
+        }
+        else {
+            cout << "菜单文件已找到。\n";
+            test_file.close();
+        }
+        RestaurantSystem system;
+        cout << "系统准备就绪，加载主菜单\n";
+        system.show_main_menu();
+        cout << "\n系统正常终止。\n";
+        return 0;
+    }
+    catch (const exception& e) {
+        cout << "严重错误:" << e.what() << "\n";
+        return 1;
+    }
+    catch (...) {
+        cout << "发生未知严重错误。\n";
+        return 2;
+    }
+}
